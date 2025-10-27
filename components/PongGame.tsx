@@ -19,7 +19,11 @@ interface Settings {
   winningScore: number;
 }
 
-export default function PongGame() {
+interface PongGameProps {
+  onBackToMenu?: () => void;
+}
+
+export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [gameStarted, setGameStarted] = useState(false);
   const [gamePaused, setGamePaused] = useState(false);
@@ -45,7 +49,7 @@ export default function PongGame() {
   });
 
   const keysPressed = useRef<Set<string>>(new Set());
-  const animationFrameId = useRef<number>();
+  const animationFrameId = useRef<number | undefined>(undefined);
   const audioContextRef = useRef<AudioContext | null>(null);
 
   // Canvas dimensions
@@ -303,10 +307,18 @@ export default function PongGame() {
           </button>
           <button
             onClick={startGame}
-            className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded text-xl font-bold"
+            className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded text-xl font-bold w-full"
           >
             Commencer
           </button>
+          {onBackToMenu && (
+            <button
+              onClick={onBackToMenu}
+              className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded mt-3 w-full"
+            >
+              ← Retour au menu
+            </button>
+          )}
         </div>
       )}
 
