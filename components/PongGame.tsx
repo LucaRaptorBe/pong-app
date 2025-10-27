@@ -32,16 +32,16 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
   const [showSettings, setShowSettings] = useState(false);
 
   const [settings, setSettings] = useState<Settings>({
-    ballSpeed: 5,
+    ballSpeed: 3,
     paddleSpeed: 8,
     winningScore: 5,
   });
 
   const gameStateRef = useRef<GameState>({
-    ballX: 400,
+    ballX: 500,
     ballY: 300,
-    ballSpeedX: 5,
-    ballSpeedY: 5,
+    ballSpeedX: 3,
+    ballSpeedY: 3,
     paddle1Y: 250,
     paddle2Y: 250,
     score1: 0,
@@ -53,7 +53,7 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
   const audioContextRef = useRef<AudioContext | null>(null);
 
   // Canvas dimensions
-  const CANVAS_WIDTH = 800;
+  const CANVAS_WIDTH = 1000;
   const CANVAS_HEIGHT = 600;
   const PADDLE_WIDTH = 10;
   const PADDLE_HEIGHT = 100;

@@ -30,10 +30,10 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
   const channelRef = useRef<RealtimeChannel | null>(null);
 
   const gameStateRef = useRef<GameState>({
-    ballX: 400,
+    ballX: 500,
     ballY: 300,
-    ballSpeedX: 5,
-    ballSpeedY: 5,
+    ballSpeedX: 3,
+    ballSpeedY: 3,
     paddle1Y: 250,
     paddle2Y: 250,
     score1: 0,
@@ -46,7 +46,7 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
   const myPaddleY = useRef<number>(250);
 
   // Canvas dimensions
-  const CANVAS_WIDTH = 800;
+  const CANVAS_WIDTH = 1000;
   const CANVAS_HEIGHT = 600;
   const PADDLE_WIDTH = 10;
   const PADDLE_HEIGHT = 100;
@@ -86,8 +86,8 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
     const state = gameStateRef.current;
     state.ballX = CANVAS_WIDTH / 2;
     state.ballY = CANVAS_HEIGHT / 2;
-    state.ballSpeedX = 5 * (Math.random() > 0.5 ? 1 : -1);
-    state.ballSpeedY = 5 * (Math.random() > 0.5 ? 1 : -1);
+    state.ballSpeedX = 3 * (Math.random() > 0.5 ? 1 : -1);
+    state.ballSpeedY = 3 * (Math.random() > 0.5 ? 1 : -1);
   }, [CANVAS_WIDTH, CANVAS_HEIGHT]);
 
   // Draw functions
