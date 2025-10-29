@@ -14,8 +14,9 @@ export default function Home() {
   const [roomCode, setRoomCode] = useState('');
   const [isHost, setIsHost] = useState(false);
 
-  const handleCreateRoom = (code: string) => {
-    setRoomCode(code);
+  const handleCreateRoom = () => {
+    // Générer un placeholder, le vrai code sera généré par PeerJS
+    setRoomCode('generating...');
     setIsHost(true);
     setMode('online-game');
   };

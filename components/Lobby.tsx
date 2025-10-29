@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { generateRoomCode } from '@/lib/supabase';
+import { generateRoomCode } from '@/lib/socketConnection';
 
 interface LobbyProps {
-  onCreateRoom: (roomCode: string) => void;
+  onCreateRoom: () => void; // Plus besoin de passer le code
   onJoinRoom: (roomCode: string) => void;
   onBackToMenu: () => void;
 }
@@ -16,29 +16,19 @@ export default function Lobby({ onCreateRoom, onJoinRoom, onBackToMenu }: LobbyP
   const [error, setError] = useState('');
 
   const handleCreateRoom = () => {
-    const code = generateRoomCode();
-    setGeneratedCode(code);
-    setMode('create');
-  };
-
-  const handleStartGame = () => {
-    if (generatedCode) {
-      onCreateRoom(generatedCode);
-    }
+    // Lancer directement la création, sans passer par l'écran intermédiaire
+    onCreateRoom();
   };
 
   const handleJoinRoom = () => {
-    if (roomCode.length === 6) {
-      onJoinRoom(roomCode.toUpperCase());
+    if (roomCode.trim().length > 0) {
+      onJoinRoom(roomCode.trim());
     } else {
-      setError('Le code doit contenir 6 caractères');
+      setError('Veuillez entrer un code valide');
     }
   };
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(generatedCode);
-    alert('Code copié dans le presse-papier !');
-  };
+  // Plus utilisé car on ne passe plus par l'écran intermédiaire
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black p-4">
@@ -73,52 +63,6 @@ export default function Lobby({ onCreateRoom, onJoinRoom, onBackToMenu }: LobbyP
         </div>
       )}
 
-      {mode === 'create' && (
-        <div className="bg-gray-900 p-8 rounded-lg border-2 border-green-500 max-w-md w-full">
-          <h2 className="text-2xl text-white mb-4 text-center">Partie créée !</h2>
-
-          <div className="bg-black/50 p-6 rounded mb-6">
-            <p className="text-gray-400 text-sm mb-2 text-center">Code de la salle :</p>
-            <div className="flex items-center justify-center gap-2">
-              <p className="text-4xl font-mono font-bold text-green-400 tracking-wider">
-                {generatedCode}
-              </p>
-              <button
-                onClick={copyToClipboard}
-                className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded transition"
-                title="Copier le code"
-              >
-                📋
-              </button>
-            </div>
-          </div>
-
-          <div className="mb-6">
-            <p className="text-gray-300 text-center mb-2">
-              Partagez ce code avec votre adversaire
-            </p>
-            <div className="flex items-center justify-center">
-              <div className="animate-pulse text-yellow-400 text-center">
-                ⏳ En attente d'un joueur...
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={handleStartGame}
-            className="w-full bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded font-bold transition"
-          >
-            Commencer la partie
-          </button>
-
-          <button
-            onClick={() => setMode('select')}
-            className="w-full bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded mt-3 transition"
-          >
-            Annuler
-          </button>
-        </div>
-      )}
 
       {mode === 'join' && (
         <div className="bg-gray-900 p-8 rounded-lg border-2 border-blue-500 max-w-md w-full">
@@ -126,27 +70,29 @@ export default function Lobby({ onCreateRoom, onJoinRoom, onBackToMenu }: LobbyP
 
           <div className="mb-6">
             <label className="text-gray-300 block mb-2">
-              Entrez le code de la salle :
+              Entrez le code PeerJS complet :
             </label>
-            <input
-              type="text"
+            <textarea
               value={roomCode}
               onChange={(e) => {
-                setRoomCode(e.target.value.toUpperCase());
+                setRoomCode(e.target.value);
                 setError('');
               }}
-              maxLength={6}
-              placeholder="ABC123"
-              className="w-full bg-black/50 text-white text-2xl font-mono font-bold text-center p-4 rounded border-2 border-blue-400 focus:border-blue-300 focus:outline-none tracking-wider"
+              placeholder="7b3f1d2e-8c9a-4e5f-b6d7-a1b2c3d4e5f6"
+              rows={3}
+              className="w-full bg-black/50 text-white text-sm font-mono text-center p-4 rounded border-2 border-blue-400 focus:border-blue-300 focus:outline-none resize-none"
             />
             {error && (
               <p className="text-red-400 text-sm mt-2 text-center">{error}</p>
             )}
+            <p className="text-gray-500 text-xs mt-2 text-center">
+              Copiez/collez le code complet fourni par l'hôte
+            </p>
           </div>
 
           <button
             onClick={handleJoinRoom}
-            disabled={roomCode.length !== 6}
+            disabled={roomCode.trim().length === 0}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-3 rounded font-bold transition"
           >
             Rejoindre

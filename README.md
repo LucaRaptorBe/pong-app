@@ -1,6 +1,6 @@
 # 🏓 Pong Game - 2 Players (Local & Online)
 
-Un jeu de Pong classique pour 2 joueurs avec mode local et multijoueur en ligne, créé avec Next.js, TypeScript et Supabase.
+Un jeu de Pong classique pour 2 joueurs avec mode local et multijoueur en ligne, créé avec Next.js, TypeScript et Socket.IO.
 
 ## 🎮 Modes de jeu
 
@@ -12,7 +12,7 @@ Un jeu de Pong classique pour 2 joueurs avec mode local et multijoueur en ligne,
 - Jouez contre quelqu'un d'autre via Internet
 - Créez une partie et partagez le code à 6 caractères
 - Ou rejoignez une partie existante avec un code
-- Synchronisation en temps réel via Supabase
+- **Connexion temps réel** via Socket.IO - latence ultra-faible !
 
 ## 🎮 Fonctionnalités
 
@@ -47,26 +47,7 @@ Un jeu de Pong classique pour 2 joueurs avec mode local et multijoueur en ligne,
 npm install
 ```
 
-### 2. Configuration Supabase (pour le mode en ligne)
-
-1. Créez un compte gratuit sur [https://supabase.com](https://supabase.com)
-2. Créez un nouveau projet
-3. Allez dans **Settings > API**
-4. Copiez votre **Project URL** et votre **anon/public key**
-5. Créez un fichier `.env.local` à la racine du projet :
-
-```bash
-cp .env.local.example .env.local
-```
-
-6. Éditez `.env.local` et ajoutez vos clés :
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://votre-projet.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=votre-cle-anon-publique
-```
-
-### 3. Lancer le serveur de développement
+### 2. Lancer le serveur de développement
 
 ```bash
 npm run dev
@@ -74,32 +55,44 @@ npm run dev
 
 Ouvrez [http://localhost:3000](http://localhost:3000) dans votre navigateur.
 
-### 4. Build pour production
+### 3. Build pour production
 
 ```bash
 npm run build
 npm start
 ```
 
+### 3. Lancer le serveur Socket.IO (pour le mode en ligne)
+
+```bash
+# Dans un terminal séparé
+npm run server
+```
+
+Le serveur Socket.IO tourne sur le port 3003.
+
 ## 🛠️ Technologies utilisées
 
 - **Next.js 16** - Framework React avec App Router
 - **TypeScript** - Typage statique
 - **Tailwind CSS** - Styling
-- **Supabase** - Backend temps réel pour le multijoueur
+- **Socket.IO** - Communication temps réel pour le multijoueur
 - **Canvas API** - Rendu du jeu
 - **Web Audio API** - Effets sonores
 
 ## 📦 Déploiement
 
-### Sur Vercel
+### Sur Render (Recommandé - Gratuit)
 
-1. Connectez-vous à [https://vercel.com](https://vercel.com)
-2. Importez votre repository GitHub
-3. Ajoutez vos variables d'environnement :
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-4. Déployez !
+Le mode multijoueur nécessite un serveur Socket.IO. Vercel ne supporte pas les WebSockets, donc nous utilisons Render.
+
+**📖 Voir le guide complet :** [DEPLOYMENT.md](./DEPLOYMENT.md)
+
+**Résumé rapide :**
+1. Pushez votre code sur GitHub
+2. Créez 2 services sur Render (Backend + Frontend)
+3. Configurez les variables d'environnement
+4. C'est prêt ! 🚀
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/LucaRaptorBe/pong-app)
 
@@ -139,13 +132,13 @@ npm start
 
 ### Comment ça marche ?
 
-1. **Création de salle** : Le joueur 1 génère un code unique
-2. **Connexion** : Les deux joueurs se connectent au même "channel" Supabase
-3. **Synchronisation** :
+1. **Création de salle** : Le joueur 1 génère un code unique à 6 caractères
+2. **Connexion Socket.IO** : Les deux joueurs se connectent au serveur Socket.IO
+3. **Synchronisation temps réel** :
    - Chaque joueur envoie uniquement la position de SA raquette
    - L'hôte calcule la physique de la balle et envoie l'état complet du jeu
    - L'invité reçoit et affiche l'état du jeu
-4. **Temps réel** : Utilisation de Supabase Realtime (WebSocket) pour une latence de ~50-100ms
+   - Communication bidirectionnelle via WebSockets
 
 ### Pourquoi l'hôte calcule la physique ?
 
@@ -156,24 +149,28 @@ Pour éviter les problèmes de synchronisation, un seul joueur (l'hôte) est res
 
 L'invité reçoit simplement l'état du jeu et l'affiche.
 
+### Avantages de Socket.IO
+
+✅ **Temps réel** : Communication bidirectionnelle instantanée
+✅ **Fiable** : Reconnexion automatique en cas de déconnexion
+✅ **Compatible** : Fonctionne sur tous les navigateurs modernes
+✅ **Scalable** : Supporte plusieurs parties simultanées
+✅ **Fallback automatique** : Passe de WebSocket à long-polling si nécessaire
+
 ## 🐛 Dépannage
 
 ### Le mode en ligne ne fonctionne pas ?
 
-- Vérifiez que vous avez bien configuré les variables d'environnement Supabase
-- Vérifiez que vous avez créé un projet Supabase
+- Vérifiez que le serveur Socket.IO est démarré (`npm run server`)
 - Ouvrez la console du navigateur pour voir les erreurs éventuelles
+- Vérifiez que le port 3003 n'est pas bloqué
+- En production : vérifiez les variables d'environnement dans Render
 
 ### Les deux joueurs ne peuvent pas se connecter ?
 
 - Assurez-vous que les deux joueurs utilisent le **même code de salle**
-- Vérifiez que les deux joueurs sont connectés à Internet
-- Essayez de rafraîchir la page
-
-### Latence élevée ?
-
-- Supabase Realtime a une latence de ~50-100ms, c'est normal
-- Pour une latence plus faible, il faudrait utiliser Socket.IO avec un serveur dédié
+- Vérifiez que les deux joueurs sont connectés au même serveur
+- En production : Attendez 30-60s si c'est la première connexion (cold start)
 
 ## 📝 Licence
 
@@ -183,4 +180,4 @@ MIT
 
 Créé avec ❤️ par [LucaRaptorBe](https://github.com/LucaRaptorBe)
 
-Technologies : Next.js + Supabase + TypeScript + Tailwind CSS
+Technologies : Next.js + Socket.IO + TypeScript + Tailwind CSS

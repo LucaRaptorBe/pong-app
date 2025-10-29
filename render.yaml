@@ -1,0 +1,23 @@
+services:
+  # Service Socket.IO (Backend)
+  - type: web
+    name: pong-socketio-server
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /
+
+  # Service Next.js (Frontend)
+  - type: web
+    name: pong-frontend
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_SOCKET_URL
+        sync: false # À définir manuellement dans Render Dashboard
