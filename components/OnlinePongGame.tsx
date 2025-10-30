@@ -2,6 +2,17 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { SocketConnectionManager, GameMessage } from '@/lib/socketConnection';
+import {
+  generateStarfield,
+  updateStars,
+  drawStarfield,
+  createScoreParticles,
+  updateParticles,
+  drawParticles,
+  SPACE_COLORS,
+  type Star,
+  type Particle,
+} from '@/lib/spaceEffects';
 
 interface OnlinePongGameProps {
   roomCode: string;
@@ -47,6 +58,8 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
   const animationFrameId = useRef<number | undefined>(undefined);
   const audioContextRef = useRef<AudioContext | null>(null);
   const myPaddleY = useRef<number>(250);
+  const starsRef = useRef<Star[][]>([]);
+  const particlesRef = useRef<Particle[]>([]);
 
   // Canvas dimensions
   const CANVAS_WIDTH = 1000;
@@ -93,6 +106,13 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
     state.ballSpeedY = 3 * (Math.random() > 0.5 ? 1 : -1);
   }, [CANVAS_WIDTH, CANVAS_HEIGHT]);
 
+  // Initialize starfield
+  useEffect(() => {
+    if (canvasRef.current && starsRef.current.length === 0) {
+      starsRef.current = generateStarfield(CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
+  }, [CANVAS_WIDTH, CANVAS_HEIGHT]);
+
   // Draw functions
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -103,12 +123,16 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
 
     const state = gameStateRef.current;
 
-    // Clear canvas with fade effect
-    ctx.fillStyle = 'rgba(10, 10, 10, 0.2)';
+    // Clear canvas with deep space background
+    ctx.fillStyle = SPACE_COLORS.DEEP_BLACK;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // Draw center line
-    ctx.strokeStyle = '#333';
+    // Draw animated starfield
+    updateStars(starsRef.current, CANVAS_HEIGHT);
+    drawStarfield(ctx, starsRef.current);
+
+    // Draw center line with space theme
+    ctx.strokeStyle = SPACE_COLORS.DEEP_VIOLET;
     ctx.lineWidth = 2;
     ctx.setLineDash([10, 10]);
     ctx.beginPath();
@@ -117,35 +141,44 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Draw paddles with glow
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = isHost ? '#00ff00' : '#ff00ff';
-    ctx.fillStyle = isHost ? '#00ff00' : '#ff00ff';
+    // Draw paddles with themed colors (cyan vs magenta)
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = SPACE_COLORS.CYAN;
+    ctx.fillStyle = SPACE_COLORS.CYAN;
     ctx.fillRect(10, state.paddle1Y, PADDLE_WIDTH, PADDLE_HEIGHT);
 
-    ctx.shadowColor = isHost ? '#ff00ff' : '#00ff00';
-    ctx.fillStyle = isHost ? '#ff00ff' : '#00ff00';
+    ctx.shadowColor = SPACE_COLORS.MAGENTA;
+    ctx.fillStyle = SPACE_COLORS.MAGENTA;
     ctx.fillRect(CANVAS_WIDTH - 20, state.paddle2Y, PADDLE_WIDTH, PADDLE_HEIGHT);
 
-    // Draw ball with glow
-    ctx.shadowColor = '#ffffff';
-    ctx.fillStyle = '#ffffff';
+    // Draw ball
+    ctx.shadowColor = SPACE_COLORS.STAR_WHITE;
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = SPACE_COLORS.STAR_WHITE;
     ctx.beginPath();
     ctx.arc(state.ballX, state.ballY, BALL_SIZE, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.shadowBlur = 0;
 
-    // Draw scores
-    ctx.fillStyle = isHost ? '#00ff00' : '#ff00ff';
+    // Draw and update particles
+    particlesRef.current = updateParticles(particlesRef.current);
+    drawParticles(ctx, particlesRef.current);
+
+    // Draw scores with themed colors
+    ctx.fillStyle = SPACE_COLORS.CYAN;
     ctx.font = 'bold 48px Arial';
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = SPACE_COLORS.CYAN;
     ctx.fillText(state.score1.toString(), CANVAS_WIDTH / 4, 60);
 
-    ctx.fillStyle = isHost ? '#ff00ff' : '#00ff00';
+    ctx.fillStyle = SPACE_COLORS.MAGENTA;
+    ctx.shadowColor = SPACE_COLORS.MAGENTA;
     ctx.fillText(state.score2.toString(), (CANVAS_WIDTH * 3) / 4, 60);
 
     // Draw "VOUS" indicator
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     ctx.font = 'bold 16px Arial';
     if (isHost) {
       ctx.fillText('VOUS', 40, 30);
@@ -198,6 +231,9 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
     if (state.ballX < 0) {
       state.score2++;
       playSound(150, 0.3);
+      // Create particle explosion for player 2 score (magenta)
+      const particles = createScoreParticles(CANVAS_WIDTH - 100, CANVAS_HEIGHT / 2, SPACE_COLORS.MAGENTA);
+      particlesRef.current.push(...particles);
       setRoundInProgress(false); // Pause pour attendre ESPACE
 
       if (state.score2 >= WINNING_SCORE) {
@@ -214,6 +250,9 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
     if (state.ballX > CANVAS_WIDTH) {
       state.score1++;
       playSound(150, 0.3);
+      // Create particle explosion for player 1 score (cyan)
+      const particles = createScoreParticles(100, CANVAS_HEIGHT / 2, SPACE_COLORS.CYAN);
+      particlesRef.current.push(...particles);
       setRoundInProgress(false); // Pause pour attendre ESPACE
 
       if (state.score1 >= WINNING_SCORE) {
@@ -451,15 +490,15 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
   }, [gameStarted, opponentConnected, gameLoop]);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black p-4">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-space-nebula p-4">
       <div className="mb-4 flex flex-col items-center gap-2">
-        <h1 className="text-4xl font-bold text-white">PONG ONLINE</h1>
+        <h1 className="text-4xl font-bold text-cyan-glow animate-float">PONG ONLINE</h1>
         <div className="flex flex-col items-center gap-2">
           {isHost ? (
-            <div className="flex flex-col items-center bg-gray-900/50 p-4 rounded-lg border border-blue-500/30">
-              <span className="text-xs text-gray-400 mb-1">Partagez ce code avec votre adversaire:</span>
+            <div className="flex flex-col items-center space-card p-4 rounded-lg">
+              <span className="text-xs text-purple-haze mb-1">Partagez ce code avec votre adversaire:</span>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-blue-300 font-mono bg-black/50 px-3 py-2 rounded">{actualRoomCode}</span>
+                <span className="text-sm text-cyan font-mono bg-black/50 px-3 py-2 rounded border border-cyan shadow-[0_0_10px_rgba(0,255,255,0.3)]" style={{textShadow: '0 0 8px rgba(0, 255, 255, 0.6)'}}>{actualRoomCode}</span>
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(actualRoomCode);
@@ -471,7 +510,7 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
                       btn.textContent = originalText;
                     }, 2000);
                   }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded transition text-sm"
+                  className="hologram-button-secondary px-3 py-2 rounded text-sm"
                   title="Copier le code"
                 >
                   📋 Copier
@@ -479,9 +518,9 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
               </div>
             </div>
           ) : (
-            <span className="text-sm text-gray-400">Connexion en cours...</span>
+            <span className="text-sm text-purple-haze">Connexion en cours...</span>
           )}
-          <span className={`text-sm ${opponentConnected ? 'text-green-400' : 'text-yellow-400'}`}>
+          <span className={`text-sm ${opponentConnected ? 'text-cyan text-space-glow' : 'text-electric-blue text-space-glow'}`}>
             {opponentConnected ? '● Connecté' : `○ ${connectionStatus}`}
           </span>
         </div>
@@ -489,8 +528,8 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
 
       {/* Écran de lobby - avant le début de la partie */}
       {!gameStarted && (
-        <div className="absolute z-10 bg-black/95 p-8 rounded-lg text-center border-2 border-blue-500/50 max-w-2xl w-full">
-          <h2 className="text-3xl text-white mb-6">🎮 LOBBY - PONG ONLINE</h2>
+        <div className="absolute z-10 space-card-glow p-8 rounded-lg text-center max-w-2xl w-full">
+          <h2 className="text-3xl text-cyan-glow mb-6">🎮 LOBBY</h2>
 
           {/* Statut de connexion */}
           <div className="mb-6">
@@ -498,29 +537,26 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
               <div className="bg-red-900/30 border border-red-600/50 rounded p-4 mb-4">
                 <p className="text-red-300 font-bold mb-2">⚠️ Erreur</p>
                 <p className="text-red-200 text-sm">{connectionStatus}</p>
-                <p className="text-gray-400 text-xs mt-2">Cliquez sur "Quitter la partie" pour revenir au menu</p>
+                <p className="text-purple-haze text-xs mt-2">Cliquez sur "Quitter la partie" pour revenir au menu</p>
               </div>
-            ) : (
-              <p className="text-gray-300 mb-4">{connectionStatus}</p>
-            )}
-            {!bothPlayersReady && !connectionStatus.includes('❌') && !connectionStatus.includes('Erreur') && (
-              <div className="animate-pulse text-yellow-400">⏳ En attente...</div>
-            )}
+            ) : !bothPlayersReady ? (
+              <div className="animate-pulse text-electric-blue text-lg">⏳ En attente...</div>
+            ) : null}
           </div>
 
           {/* Affichage des 2 joueurs */}
           <div className="flex justify-around items-center gap-8 mb-6">
             {/* Joueur 1 (Hôte) */}
-            <div className="flex flex-col items-center bg-gray-800/50 p-6 rounded-lg border-2 border-green-500/50 flex-1">
+            <div className="flex flex-col items-center bg-black/30 p-6 rounded-lg border-2 border-cyan/50 flex-1">
               <div className="text-6xl mb-3">🎮</div>
-              <h3 className="text-xl font-bold text-green-400 mb-2">Joueur 1 (Hôte)</h3>
-              <p className="text-gray-400 text-sm mb-2">Raquette gauche (vert)</p>
-              <p className="text-white text-sm">Contrôles: W / S</p>
+              <h3 className="text-xl font-bold text-cyan text-space-glow mb-2">Joueur 1 (Hôte)</h3>
+              <p className="text-purple-haze text-sm mb-2">Raquette gauche (cyan)</p>
+              <p className="text-white text-sm">Contrôles: W / S ou ↑ / ↓</p>
               <div className="mt-3">
                 {isHost ? (
-                  <span className="text-green-400 font-bold">● Vous</span>
+                  <span className="text-cyan font-bold text-space-glow">● Vous</span>
                 ) : opponentConnected ? (
-                  <span className="text-green-400">● Connecté</span>
+                  <span className="text-cyan text-space-glow">● Connecté</span>
                 ) : (
                   <span className="text-gray-500">○ En attente</span>
                 )}
@@ -528,19 +564,19 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
             </div>
 
             {/* VS */}
-            <div className="text-4xl font-bold text-white">VS</div>
+            <div className="text-4xl font-bold text-electric-blue-glow">VS</div>
 
             {/* Joueur 2 (Client) */}
-            <div className="flex flex-col items-center bg-gray-800/50 p-6 rounded-lg border-2 border-pink-500/50 flex-1">
+            <div className="flex flex-col items-center bg-black/30 p-6 rounded-lg border-2 border-magenta/50 flex-1">
               <div className="text-6xl mb-3">🎮</div>
-              <h3 className="text-xl font-bold text-pink-400 mb-2">Joueur 2</h3>
-              <p className="text-gray-400 text-sm mb-2">Raquette droite (rose)</p>
-              <p className="text-white text-sm">Contrôles: ↑ / ↓</p>
+              <h3 className="text-xl font-bold text-magenta text-space-glow mb-2">Joueur 2</h3>
+              <p className="text-purple-haze text-sm mb-2">Raquette droite (magenta)</p>
+              <p className="text-white text-sm">Contrôles: W / S ou ↑ / ↓</p>
               <div className="mt-3">
                 {!isHost ? (
-                  <span className="text-pink-400 font-bold">● Vous</span>
+                  <span className="text-magenta font-bold text-space-glow">● Vous</span>
                 ) : opponentConnected ? (
-                  <span className="text-pink-400">● Connecté</span>
+                  <span className="text-magenta text-space-glow">● Connecté</span>
                 ) : (
                   <span className="text-gray-500">○ En attente</span>
                 )}
@@ -550,19 +586,19 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
 
           {/* Instructions */}
           {bothPlayersReady && isHost && (
-            <div className="bg-yellow-900/30 border border-yellow-600/50 rounded p-4 mb-4">
-              <p className="text-yellow-300 font-bold text-lg mb-2">
+            <div className="bg-electric-blue/10 border border-electric-blue/50 rounded p-4 mb-4">
+              <p className="text-electric-blue-glow font-bold text-lg mb-2">
                 🎯 Appuyez sur ESPACE pour commencer !
               </p>
-              <p className="text-yellow-200 text-sm">
+              <p className="text-cyan text-sm">
                 (Seulement l'hôte peut démarrer la partie)
               </p>
             </div>
           )}
 
           {bothPlayersReady && !isHost && (
-            <div className="bg-blue-900/30 border border-blue-600/50 rounded p-4 mb-4">
-              <p className="text-blue-300 text-sm">
+            <div className="bg-magenta/10 border border-magenta/50 rounded p-4 mb-4">
+              <p className="text-magenta-glow text-sm">
                 En attente que l'hôte démarre la partie...
               </p>
             </div>
@@ -572,17 +608,17 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
 
       {/* Message après un score (round terminé) */}
       {gameStarted && !roundInProgress && !gameOver && (
-        <div className="absolute z-10 bg-black/90 p-6 rounded-lg text-center border-2 border-yellow-500/50">
-          <h3 className="text-2xl text-yellow-300 mb-3">⚡ Point marqué !</h3>
-          <p className="text-xl text-white mb-4">
+        <div className="absolute z-10 space-card-glow p-6 rounded-lg text-center">
+          <h3 className="text-2xl text-electric-blue-glow mb-3">⚡ Point marqué !</h3>
+          <p className="text-xl text-cyan-glow mb-4">
             Score: {gameStateRef.current.score1} - {gameStateRef.current.score2}
           </p>
           {isHost ? (
-            <p className="text-yellow-200 text-sm">
+            <p className="text-magenta text-sm">
               Appuyez sur ESPACE pour continuer
             </p>
           ) : (
-            <p className="text-gray-400 text-sm">
+            <p className="text-purple-haze text-sm">
               En attente de l'hôte...
             </p>
           )}
@@ -591,19 +627,19 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
 
       {/* Écran de fin de partie */}
       {gameOver && (
-        <div className="absolute z-10 bg-black/95 p-8 rounded-lg text-center border-4 border-yellow-500">
-          <h2 className="text-5xl text-white mb-4">
+        <div className="absolute z-10 space-card-glow p-8 rounded-lg text-center border-4 border-electric-blue">
+          <h2 className="text-5xl text-cyan-glow mb-4">
             🏆 {winner === 'Joueur 1' ? (isHost ? 'VICTOIRE!' : 'DÉFAITE') : (isHost ? 'DÉFAITE' : 'VICTOIRE!')}
           </h2>
-          <p className="text-3xl text-gray-300 mb-2">
+          <p className="text-3xl text-magenta-glow mb-2">
             {winner === 'Joueur 1' ? (isHost ? 'Vous gagnez!' : 'Vous perdez!') : (isHost ? 'Vous perdez!' : 'Vous gagnez!')}
           </p>
-          <p className="text-2xl text-gray-300 mb-6">
+          <p className="text-2xl text-purple-haze mb-6">
             Score final: {gameStateRef.current.score1} - {gameStateRef.current.score2}
           </p>
           <button
             onClick={onLeaveGame}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded text-xl font-bold transition"
+            className="hologram-button-primary px-8 py-3 rounded text-xl font-bold"
           >
             Retour au menu
           </button>
@@ -614,19 +650,19 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        className="border-4 border-white rounded shadow-2xl"
+        className={`border-4 border-electric-blue rounded shadow-[0_0_30px_rgba(0,149,255,0.5)] ${!gameStarted ? 'opacity-0' : 'opacity-100'} transition-opacity`}
       />
 
-      <div className="mt-4 text-gray-400 text-sm text-center">
+      <div className="mt-4 text-purple-haze text-sm text-center">
         <p>
           {isHost ? 'Vous: W/S' : 'Vous: ↑/↓'} |
-          <span className="text-white mx-2">Vous êtes {isHost ? 'à gauche (vert)' : 'à droite (rose)'}</span>
+          <span className="text-cyan mx-2">Vous êtes {isHost ? 'à gauche (cyan)' : 'à droite (magenta)'}</span>
         </p>
       </div>
 
       <button
         onClick={onLeaveGame}
-        className="mt-4 bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded transition"
+        className="mt-4 hologram-button-tertiary px-6 py-2 rounded"
       >
         Quitter la partie
       </button>

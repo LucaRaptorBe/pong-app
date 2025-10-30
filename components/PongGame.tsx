@@ -1,6 +1,17 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import {
+  generateStarfield,
+  updateStars,
+  drawStarfield,
+  createScoreParticles,
+  updateParticles,
+  drawParticles,
+  SPACE_COLORS,
+  type Star,
+  type Particle,
+} from '@/lib/spaceEffects';
 
 interface GameState {
   ballX: number;
@@ -51,6 +62,8 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
   const keysPressed = useRef<Set<string>>(new Set());
   const animationFrameId = useRef<number | undefined>(undefined);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const starsRef = useRef<Star[][]>([]);
+  const particlesRef = useRef<Particle[]>([]);
 
   // Canvas dimensions
   const CANVAS_WIDTH = 1000;
@@ -91,6 +104,13 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
     state.ballSpeedY = settings.ballSpeed * (Math.random() > 0.5 ? 1 : -1);
   }, [settings.ballSpeed, CANVAS_WIDTH, CANVAS_HEIGHT]);
 
+  // Initialize starfield
+  useEffect(() => {
+    if (canvasRef.current && starsRef.current.length === 0) {
+      starsRef.current = generateStarfield(CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
+  }, [CANVAS_WIDTH, CANVAS_HEIGHT]);
+
   // Draw functions
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -101,12 +121,16 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
 
     const state = gameStateRef.current;
 
-    // Clear canvas with fade effect
-    ctx.fillStyle = 'rgba(10, 10, 10, 0.2)';
+    // Clear canvas with deep space background
+    ctx.fillStyle = SPACE_COLORS.DEEP_BLACK;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // Draw center line
-    ctx.strokeStyle = '#333';
+    // Draw animated starfield
+    updateStars(starsRef.current, CANVAS_HEIGHT);
+    drawStarfield(ctx, starsRef.current);
+
+    // Draw center line with space theme
+    ctx.strokeStyle = SPACE_COLORS.DEEP_VIOLET;
     ctx.lineWidth = 2;
     ctx.setLineDash([10, 10]);
     ctx.beginPath();
@@ -115,32 +139,42 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Draw paddles with glow
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = '#00ff00';
-    ctx.fillStyle = '#00ff00';
+    // Draw paddles with themed colors (cyan vs magenta)
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = SPACE_COLORS.CYAN;
+    ctx.fillStyle = SPACE_COLORS.CYAN;
     ctx.fillRect(10, state.paddle1Y, PADDLE_WIDTH, PADDLE_HEIGHT);
 
-    ctx.shadowColor = '#ff00ff';
-    ctx.fillStyle = '#ff00ff';
+    ctx.shadowColor = SPACE_COLORS.MAGENTA;
+    ctx.fillStyle = SPACE_COLORS.MAGENTA;
     ctx.fillRect(CANVAS_WIDTH - 20, state.paddle2Y, PADDLE_WIDTH, PADDLE_HEIGHT);
 
-    // Draw ball with glow
-    ctx.shadowColor = '#ffffff';
-    ctx.fillStyle = '#ffffff';
+    // Draw ball
+    ctx.shadowColor = SPACE_COLORS.STAR_WHITE;
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = SPACE_COLORS.STAR_WHITE;
     ctx.beginPath();
     ctx.arc(state.ballX, state.ballY, BALL_SIZE, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.shadowBlur = 0;
 
-    // Draw scores
-    ctx.fillStyle = '#00ff00';
+    // Draw and update particles
+    particlesRef.current = updateParticles(particlesRef.current);
+    drawParticles(ctx, particlesRef.current);
+
+    // Draw scores with themed colors
+    ctx.fillStyle = SPACE_COLORS.CYAN;
     ctx.font = 'bold 48px Arial';
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = SPACE_COLORS.CYAN;
     ctx.fillText(state.score1.toString(), CANVAS_WIDTH / 4, 60);
 
-    ctx.fillStyle = '#ff00ff';
+    ctx.fillStyle = SPACE_COLORS.MAGENTA;
+    ctx.shadowColor = SPACE_COLORS.MAGENTA;
     ctx.fillText(state.score2.toString(), (CANVAS_WIDTH * 3) / 4, 60);
+
+    ctx.shadowBlur = 0;
   }, [CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_SIZE]);
 
   // Game logic
@@ -201,6 +235,9 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
     if (state.ballX < 0) {
       state.score2++;
       playSound(150, 0.3);
+      // Create particle explosion for player 2 score (magenta)
+      const particles = createScoreParticles(CANVAS_WIDTH - 100, CANVAS_HEIGHT / 2, SPACE_COLORS.MAGENTA);
+      particlesRef.current.push(...particles);
       resetBall();
 
       if (state.score2 >= settings.winningScore) {
@@ -212,6 +249,9 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
     if (state.ballX > CANVAS_WIDTH) {
       state.score1++;
       playSound(150, 0.3);
+      // Create particle explosion for player 1 score (cyan)
+      const particles = createScoreParticles(100, CANVAS_HEIGHT / 2, SPACE_COLORS.CYAN);
+      particlesRef.current.push(...particles);
       resetBall();
 
       if (state.score1 >= settings.winningScore) {
@@ -287,34 +327,34 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black p-4">
-      <h1 className="text-4xl font-bold text-white mb-4">PONG</h1>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-space-nebula p-4">
+      <h1 className="text-4xl font-bold text-cyan-glow mb-4 animate-float">PONG</h1>
 
       {!gameStarted && !gameOver && (
-        <div className="absolute z-10 bg-black/80 p-8 rounded-lg text-center">
-          <h2 className="text-3xl text-white mb-4">Bienvenue!</h2>
+        <div className="absolute z-10 space-card p-8 rounded-lg text-center">
+          <h2 className="text-3xl text-cyan-glow mb-4">Bienvenue!</h2>
           <div className="text-left text-gray-300 mb-6 space-y-2">
-            <p><span className="text-green-400">Joueur 1:</span> W (haut) / S (bas)</p>
-            <p><span className="text-pink-400">Joueur 2:</span> ↑ (haut) / ↓ (bas)</p>
-            <p><span className="text-yellow-400">Pause:</span> Espace</p>
-            <p><span className="text-blue-400">Paramètres:</span> Echap</p>
+            <p><span className="text-cyan text-space-glow">Joueur 1:</span> W (haut) / S (bas)</p>
+            <p><span className="text-magenta text-space-glow">Joueur 2:</span> ↑ (haut) / ↓ (bas)</p>
+            <p><span className="text-electric-blue text-space-glow">Pause:</span> Espace</p>
+            <p><span className="text-purple-haze text-space-glow">Paramètres:</span> Echap</p>
           </div>
           <button
             onClick={() => setShowSettings(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded mb-3 block w-full"
+            className="hologram-button-secondary px-6 py-2 rounded mb-3 block w-full"
           >
             ⚙️ Paramètres
           </button>
           <button
             onClick={startGame}
-            className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded text-xl font-bold w-full"
+            className="hologram-button-primary px-8 py-3 rounded text-xl font-bold w-full"
           >
             Commencer
           </button>
           {onBackToMenu && (
             <button
               onClick={onBackToMenu}
-              className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded mt-3 w-full"
+              className="hologram-button-tertiary px-6 py-2 rounded mt-3 w-full"
             >
               ← Retour au menu
             </button>
@@ -323,21 +363,21 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
       )}
 
       {gamePaused && (
-        <div className="absolute z-10 bg-black/80 p-8 rounded-lg">
-          <h2 className="text-3xl text-white">PAUSE</h2>
-          <p className="text-gray-300 mt-2">Appuyez sur Espace pour continuer</p>
+        <div className="absolute z-10 space-card-glow p-8 rounded-lg">
+          <h2 className="text-3xl text-electric-blue-glow">PAUSE</h2>
+          <p className="text-purple-haze mt-2">Appuyez sur Espace pour continuer</p>
         </div>
       )}
 
       {gameOver && (
-        <div className="absolute z-10 bg-black/80 p-8 rounded-lg text-center">
-          <h2 className="text-4xl text-white mb-4">🏆 {winner} gagne!</h2>
-          <p className="text-2xl text-gray-300 mb-6">
+        <div className="absolute z-10 space-card-glow p-8 rounded-lg text-center">
+          <h2 className="text-4xl text-cyan-glow mb-4">🏆 {winner} gagne!</h2>
+          <p className="text-2xl text-magenta-glow mb-6">
             Score: {gameStateRef.current.score1} - {gameStateRef.current.score2}
           </p>
           <button
             onClick={restartGame}
-            className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded text-xl font-bold"
+            className="hologram-button-primary px-8 py-3 rounded text-xl font-bold"
           >
             Rejouer
           </button>
@@ -345,11 +385,11 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
       )}
 
       {showSettings && (
-        <div className="absolute z-20 bg-black/95 p-8 rounded-lg text-center border-2 border-white">
-          <h2 className="text-2xl text-white mb-4">⚙️ Paramètres</h2>
+        <div className="absolute z-20 space-card-glow p-8 rounded-lg text-center">
+          <h2 className="text-2xl text-electric-blue-glow mb-4">⚙️ Paramètres</h2>
           <div className="space-y-4 text-left">
             <div>
-              <label className="text-white block mb-2">
+              <label className="text-cyan block mb-2 text-space-glow">
                 Vitesse de la balle: {settings.ballSpeed}
               </label>
               <input
@@ -362,7 +402,7 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
               />
             </div>
             <div>
-              <label className="text-white block mb-2">
+              <label className="text-magenta block mb-2 text-space-glow">
                 Vitesse des raquettes: {settings.paddleSpeed}
               </label>
               <input
@@ -375,7 +415,7 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
               />
             </div>
             <div>
-              <label className="text-white block mb-2">
+              <label className="text-purple-haze block mb-2 text-space-glow">
                 Score pour gagner: {settings.winningScore}
               </label>
               <input
@@ -390,7 +430,7 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
           </div>
           <button
             onClick={() => setShowSettings(false)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded mt-6"
+            className="hologram-button-secondary px-6 py-2 rounded mt-6"
           >
             Fermer
           </button>
@@ -401,10 +441,10 @@ export default function PongGame({ onBackToMenu }: PongGameProps = {}) {
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        className="border-4 border-white rounded shadow-2xl"
+        className="border-4 border-electric-blue rounded shadow-[0_0_30px_rgba(0,149,255,0.5)]"
       />
 
-      <div className="mt-4 text-gray-400 text-sm text-center">
+      <div className="mt-4 text-purple-haze text-sm text-center">
         <p>Joueur 1: W/S | Joueur 2: ↑/↓ | Pause: Espace | Paramètres: Echap</p>
       </div>
     </div>

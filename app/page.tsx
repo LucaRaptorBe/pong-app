@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import PongGame from '@/components/PongGame';
+import StarfieldBackground from '@/components/StarfieldBackground';
 
 const Lobby = dynamic(() => import('@/components/Lobby'), { ssr: false });
 const OnlinePongGame = dynamic(() => import('@/components/OnlinePongGame'), { ssr: false });
@@ -35,41 +36,41 @@ export default function Home() {
 
   if (mode === 'menu') {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-black p-4">
-        <h1 className="text-6xl font-bold text-white mb-2">PONG</h1>
-        <p className="text-gray-400 mb-12">Jeu classique pour 2 joueurs</p>
+      <>
+        <StarfieldBackground density="medium" />
+        <div className="flex flex-col items-center justify-center min-h-screen bg-space-nebula p-4">
+          <h1 className="text-6xl font-bold text-white mb-2 text-cyan-glow animate-float">PONG</h1>
+          <p className="text-gray-300 mb-12 text-space-glow">Deep Space Edition</p>
 
-        <div className="bg-gray-900 p-8 rounded-lg border-2 border-white/20 max-w-md w-full space-y-4">
-          <button
-            onClick={() => setMode('local')}
-            className="w-full bg-green-600 hover:bg-green-700 text-white px-8 py-4 rounded text-xl font-bold transition flex items-center justify-center gap-3"
-          >
-            <span>🎮</span>
-            <span>Mode Local</span>
-          </button>
+          <div className="space-card p-8 rounded-lg max-w-md w-full space-y-4">
+            <button
+              onClick={() => setMode('local')}
+              className="hologram-button-primary w-full px-8 py-4 rounded text-xl flex items-center justify-center gap-3"
+            >
+              <span>🎮</span>
+              <span>Mode Local</span>
+            </button>
 
-          <button
-            onClick={() => setMode('online-lobby')}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded text-xl font-bold transition flex items-center justify-center gap-3"
-          >
-            <span>🌐</span>
-            <span>Mode En Ligne</span>
-          </button>
+            <button
+              onClick={() => setMode('online-lobby')}
+              className="hologram-button-secondary w-full px-8 py-4 rounded text-xl flex items-center justify-center gap-3"
+            >
+              <span>🌐</span>
+              <span>Mode En Ligne</span>
+            </button>
 
-          <div className="pt-4 border-t border-gray-700">
-            <p className="text-gray-400 text-sm text-center mb-2">
-              <strong className="text-white">Mode Local :</strong> 2 joueurs sur le même ordinateur
-            </p>
-            <p className="text-gray-400 text-sm text-center">
-              <strong className="text-white">Mode En Ligne :</strong> Jouez contre quelqu'un d'autre via Internet
-            </p>
+            <div className="pt-4 border-t border-cyan/30">
+              <p className="text-gray-300 text-sm text-center mb-2">
+                <strong className="text-cyan">Mode Local :</strong> 2 joueurs sur le même ordinateur
+              </p>
+              <p className="text-gray-300 text-sm text-center">
+                <strong className="text-magenta">Mode En Ligne :</strong> Jouez contre quelqu'un via Internet
+              </p>
+            </div>
           </div>
-        </div>
 
-        <div className="mt-8 text-gray-500 text-xs text-center">
-          <p>Créé avec Next.js + Supabase</p>
         </div>
-      </div>
+      </>
     );
   }
 
