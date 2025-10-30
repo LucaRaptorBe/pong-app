@@ -26,6 +26,7 @@ import {
 } from '@/lib/augments';
 import AugmentSelection from './AugmentSelection';
 import AbilityHUD from './AbilityHUD';
+import { GAME_CONFIG } from '@/lib/gameConfig';
 
 interface OnlinePongGameProps {
   roomCode: string;
@@ -287,12 +288,16 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Calculate augment effects for paddles
-    const player1Effects = calculateAugmentEffects(player1Augments.passiveAugments);
-    const player2Effects = calculateAugmentEffects(player2Augments.passiveAugments);
+    // Calculate paddle heights with augments if enabled
+    let paddle1Height = PADDLE_HEIGHT;
+    let paddle2Height = PADDLE_HEIGHT;
 
-    const paddle1Height = PADDLE_HEIGHT * player1Effects.paddleHeightMultiplier!;
-    const paddle2Height = PADDLE_HEIGHT * player2Effects.paddleHeightMultiplier!;
+    if (GAME_CONFIG.AUGMENTS_ENABLED) {
+      const player1Effects = calculateAugmentEffects(player1Augments.passiveAugments);
+      const player2Effects = calculateAugmentEffects(player2Augments.passiveAugments);
+      paddle1Height = PADDLE_HEIGHT * player1Effects.paddleHeightMultiplier!;
+      paddle2Height = PADDLE_HEIGHT * player2Effects.paddleHeightMultiplier!;
+    }
 
     // Draw paddles with themed colors (cyan vs magenta)
     ctx.shadowBlur = 15;
@@ -347,43 +352,45 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
     const state = gameStateRef.current;
     const currentTime = Date.now();
 
-    // Calculate augment effects
-    const player1Effects = calculateAugmentEffects(player1Augments.passiveAugments);
-    const player2Effects = calculateAugmentEffects(player2Augments.passiveAugments);
-
-    // Check for active ability effects
-    const player1TimeShield = player1Augments.abilities.q && isAbilityEffectActive(player1Augments.abilities.q, currentTime);
-    const player2TimeShield = player2Augments.abilities.q && isAbilityEffectActive(player2Augments.abilities.q, currentTime);
-    const player1Freeze = player1Augments.abilities.r &&
-      isAbilityEffectActive(player1Augments.abilities.r, currentTime) &&
-      player1Augments.abilities.r.ability.effect.type === 'freeze_ball';
-    const player2Freeze = player2Augments.abilities.r &&
-      isAbilityEffectActive(player2Augments.abilities.r, currentTime) &&
-      player2Augments.abilities.r.ability.effect.type === 'freeze_ball';
-
-    // Apply ball speed modifiers based on position and effects
     let ballSpeedMultiplier = 1;
 
-    // If ball is frozen, don't move it
-    if (player1Freeze || player2Freeze) {
-      ballSpeedMultiplier = 0;
-    } else {
-      // Time shield slows ball in player's side
-      if (state.ballX < CANVAS_WIDTH / 2 && player1TimeShield) {
-        ballSpeedMultiplier *= 0.4;
-      } else if (state.ballX > CANVAS_WIDTH / 2 && player2TimeShield) {
-        ballSpeedMultiplier *= 0.4;
-      }
+    // Apply augment effects only if enabled
+    if (GAME_CONFIG.AUGMENTS_ENABLED) {
+      // Calculate augment effects
+      const player1Effects = calculateAugmentEffects(player1Augments.passiveAugments);
+      const player2Effects = calculateAugmentEffects(player2Augments.passiveAugments);
 
-      // Augment effects: ball speed in different sides
-      if (state.ballX < CANVAS_WIDTH / 2) {
-        // Ball in player 1's side
-        ballSpeedMultiplier *= player1Effects.ballSpeedInOwnSide!;
-        ballSpeedMultiplier *= player2Effects.ballSpeedInOpponentSide!;
+      // Check for active ability effects
+      const player1TimeShield = player1Augments.abilities.q && isAbilityEffectActive(player1Augments.abilities.q, currentTime);
+      const player2TimeShield = player2Augments.abilities.q && isAbilityEffectActive(player2Augments.abilities.q, currentTime);
+      const player1Freeze = player1Augments.abilities.r &&
+        isAbilityEffectActive(player1Augments.abilities.r, currentTime) &&
+        player1Augments.abilities.r.ability.effect.type === 'freeze_ball';
+      const player2Freeze = player2Augments.abilities.r &&
+        isAbilityEffectActive(player2Augments.abilities.r, currentTime) &&
+        player2Augments.abilities.r.ability.effect.type === 'freeze_ball';
+
+      // If ball is frozen, don't move it
+      if (player1Freeze || player2Freeze) {
+        ballSpeedMultiplier = 0;
       } else {
-        // Ball in player 2's side
-        ballSpeedMultiplier *= player2Effects.ballSpeedInOwnSide!;
-        ballSpeedMultiplier *= player1Effects.ballSpeedInOpponentSide!;
+        // Time shield slows ball in player's side
+        if (state.ballX < CANVAS_WIDTH / 2 && player1TimeShield) {
+          ballSpeedMultiplier *= 0.4;
+        } else if (state.ballX > CANVAS_WIDTH / 2 && player2TimeShield) {
+          ballSpeedMultiplier *= 0.4;
+        }
+
+        // Augment effects: ball speed in different sides
+        if (state.ballX < CANVAS_WIDTH / 2) {
+          // Ball in player 1's side
+          ballSpeedMultiplier *= player1Effects.ballSpeedInOwnSide!;
+          ballSpeedMultiplier *= player2Effects.ballSpeedInOpponentSide!;
+        } else {
+          // Ball in player 2's side
+          ballSpeedMultiplier *= player2Effects.ballSpeedInOwnSide!;
+          ballSpeedMultiplier *= player1Effects.ballSpeedInOpponentSide!;
+        }
       }
     }
 
@@ -397,9 +404,20 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
       playSound(200, 0.1);
     }
 
-    // Calculate paddle heights with augment effects
-    const paddle1Height = PADDLE_HEIGHT * player1Effects.paddleHeightMultiplier!;
-    const paddle2Height = PADDLE_HEIGHT * player2Effects.paddleHeightMultiplier!;
+    // Calculate paddle heights and speed modifiers
+    let paddle1Height = PADDLE_HEIGHT;
+    let paddle2Height = PADDLE_HEIGHT;
+    let speedIncrease1 = 1.05;
+    let speedIncrease2 = 1.05;
+
+    if (GAME_CONFIG.AUGMENTS_ENABLED) {
+      const player1Effects = calculateAugmentEffects(player1Augments.passiveAugments);
+      const player2Effects = calculateAugmentEffects(player2Augments.passiveAugments);
+      paddle1Height = PADDLE_HEIGHT * player1Effects.paddleHeightMultiplier!;
+      paddle2Height = PADDLE_HEIGHT * player2Effects.paddleHeightMultiplier!;
+      speedIncrease1 = 1.05 * (player1Effects.ballSpeedOnHit || 1);
+      speedIncrease2 = 1.05 * (player2Effects.ballSpeedOnHit || 1);
+    }
 
     // Ball collision with paddle 1
     if (
@@ -407,8 +425,7 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
       state.ballY > state.paddle1Y &&
       state.ballY < state.paddle1Y + paddle1Height
     ) {
-      const speedIncrease = 1.05 * (player1Effects.ballSpeedOnHit || 1);
-      state.ballSpeedX = Math.abs(state.ballSpeedX) * speedIncrease;
+      state.ballSpeedX = Math.abs(state.ballSpeedX) * speedIncrease1;
       const deltaY = state.ballY - (state.paddle1Y + paddle1Height / 2);
       state.ballSpeedY = deltaY * 0.2;
       playSound(300, 0.1);
@@ -420,8 +437,7 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
       state.ballY > state.paddle2Y &&
       state.ballY < state.paddle2Y + paddle2Height
     ) {
-      const speedIncrease = 1.05 * (player2Effects.ballSpeedOnHit || 1);
-      state.ballSpeedX = -Math.abs(state.ballSpeedX) * speedIncrease;
+      state.ballSpeedX = -Math.abs(state.ballSpeedX) * speedIncrease2;
       const deltaY = state.ballY - (state.paddle2Y + paddle2Height / 2);
       state.ballSpeedY = deltaY * 0.2;
       playSound(300, 0.1);
@@ -446,17 +462,19 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
           socketManagerRef.current.sendGameOver('Joueur 2', state.score1, state.score2);
         }
       } else {
-        // Show augment selection after scoring and notify opponent
-        setTimeout(() => {
-          showAugmentSelectionScreen();
-          // Notify opponent to also show selection screen
-          if (socketManagerRef.current) {
-            socketManagerRef.current.sendMessage({
-              type: 'show-augment-selection',
-              payload: { totalScore: state.score1 + state.score2 },
-            });
-          }
-        }, 500);
+        // Show augment selection after scoring and notify opponent (only if enabled)
+        if (GAME_CONFIG.AUGMENTS_ENABLED) {
+          setTimeout(() => {
+            showAugmentSelectionScreen();
+            // Notify opponent to also show selection screen
+            if (socketManagerRef.current) {
+              socketManagerRef.current.sendMessage({
+                type: 'show-augment-selection',
+                payload: { totalScore: state.score1 + state.score2 },
+              });
+            }
+          }, 500);
+        }
       }
     }
     if (state.ballX > CANVAS_WIDTH) {
@@ -477,17 +495,19 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
           socketManagerRef.current.sendGameOver('Joueur 1', state.score1, state.score2);
         }
       } else {
-        // Show augment selection after scoring and notify opponent
-        setTimeout(() => {
-          showAugmentSelectionScreen();
-          // Notify opponent to also show selection screen
-          if (socketManagerRef.current) {
-            socketManagerRef.current.sendMessage({
-              type: 'show-augment-selection',
-              payload: { totalScore: state.score1 + state.score2 },
-            });
-          }
-        }, 500);
+        // Show augment selection after scoring and notify opponent (only if enabled)
+        if (GAME_CONFIG.AUGMENTS_ENABLED) {
+          setTimeout(() => {
+            showAugmentSelectionScreen();
+            // Notify opponent to also show selection screen
+            if (socketManagerRef.current) {
+              socketManagerRef.current.sendMessage({
+                type: 'show-augment-selection',
+                payload: { totalScore: state.score1 + state.score2 },
+              });
+            }
+          }, 500);
+        }
       }
     }
 
@@ -509,11 +529,16 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
   // Handle paddle movement
   useEffect(() => {
     const interval = setInterval(() => {
-      // Calculate augment effects for paddle speed and height
-      const myAugments = isHost ? player1Augments : player2Augments;
-      const myEffects = calculateAugmentEffects(myAugments.passiveAugments);
-      const paddleSpeed = PADDLE_SPEED * myEffects.paddleSpeedMultiplier!;
-      const paddleHeight = PADDLE_HEIGHT * myEffects.paddleHeightMultiplier!;
+      // Calculate paddle speed and height
+      let paddleSpeed = PADDLE_SPEED;
+      let paddleHeight = PADDLE_HEIGHT;
+
+      if (GAME_CONFIG.AUGMENTS_ENABLED) {
+        const myAugments = isHost ? player1Augments : player2Augments;
+        const myEffects = calculateAugmentEffects(myAugments.passiveAugments);
+        paddleSpeed = PADDLE_SPEED * myEffects.paddleSpeedMultiplier!;
+        paddleHeight = PADDLE_HEIGHT * myEffects.paddleHeightMultiplier!;
+      }
 
       let newY = myPaddleY.current;
       let moved = false;
@@ -973,7 +998,7 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
       )}
 
       {/* Écran de sélection d'augments */}
-      {(showAugmentSelection || showAbilitySelection || waitingForOpponentSelection) && (
+      {GAME_CONFIG.AUGMENTS_ENABLED && (showAugmentSelection || showAbilitySelection || waitingForOpponentSelection) && (
         <AugmentSelection
           augments={availableAugments}
           abilities={availableAbilities}
@@ -986,7 +1011,7 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
       )}
 
       {/* HUD des augments et sorts actifs */}
-      {gameStarted && !gameOver && (
+      {GAME_CONFIG.AUGMENTS_ENABLED && gameStarted && !gameOver && (
         <>
           <AbilityHUD
             augments={player1Augments.passiveAugments}

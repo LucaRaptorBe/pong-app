@@ -1,5 +1,17 @@
 # Système d'Augments pour Pong Online
 
+## ⚠️ STATUT: DÉSACTIVÉ
+
+Le système d'augments est actuellement **désactivé** pour permettre de travailler dessus plus tard.
+
+Pour l'activer/désactiver, modifiez `lib/gameConfig.ts`:
+```typescript
+export const GAME_CONFIG = {
+  AUGMENTS_ENABLED: true,  // Changer en true pour activer
+  // ...
+}
+```
+
 ## Vue d'ensemble
 
 Le système d'augments a été complètement intégré dans votre jeu Pong! Il s'inspire du mode Arena de League of Legends avec des augments passifs et des sorts actifs.
