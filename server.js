@@ -46,7 +46,11 @@ io.on('connection', (socket) => {
     rooms.set(roomCode, {
       host: socket.id,
       guest: null,
-      ready: false
+      ready: false,
+      augmentSelection: {
+        hostSelected: false,
+        guestSelected: false
+      }
     });
 
     console.log(`🎮 Room ${roomCode} created by ${socket.id}`);
@@ -108,6 +112,76 @@ io.on('connection', (socket) => {
       winner: data.winner,
       score1: data.score1,
       score2: data.score2
+    });
+  });
+
+  // Gérer les sélections d'augments
+  socket.on('augment-selected', (data) => {
+    const room = rooms.get(data.roomCode);
+    if (!room) return;
+
+    // Enregistrer qui a sélectionné
+    if (data.isHost) {
+      room.augmentSelection.hostSelected = true;
+    } else {
+      room.augmentSelection.guestSelected = true;
+    }
+
+    // Envoyer la sélection à l'adversaire
+    socket.broadcast.to(data.roomCode).emit('augment-selected', {
+      augment: data.augment,
+      isHost: data.isHost
+    });
+
+    // Si les deux ont sélectionné, notifier tout le monde de continuer
+    if (room.augmentSelection.hostSelected && room.augmentSelection.guestSelected) {
+      io.to(data.roomCode).emit('both-players-selected');
+      // Reset pour le prochain round
+      room.augmentSelection.hostSelected = false;
+      room.augmentSelection.guestSelected = false;
+    }
+  });
+
+  // Gérer les sélections de sorts
+  socket.on('ability-selected', (data) => {
+    const room = rooms.get(data.roomCode);
+    if (!room) return;
+
+    // Enregistrer qui a sélectionné
+    if (data.isHost) {
+      room.augmentSelection.hostSelected = true;
+    } else {
+      room.augmentSelection.guestSelected = true;
+    }
+
+    // Envoyer la sélection à l'adversaire
+    socket.broadcast.to(data.roomCode).emit('ability-selected', {
+      ability: data.ability,
+      isHost: data.isHost
+    });
+
+    // Si les deux ont sélectionné, notifier tout le monde de continuer
+    if (room.augmentSelection.hostSelected && room.augmentSelection.guestSelected) {
+      io.to(data.roomCode).emit('both-players-selected');
+      // Reset pour le prochain round
+      room.augmentSelection.hostSelected = false;
+      room.augmentSelection.guestSelected = false;
+    }
+  });
+
+  // Relayer les activations de sorts
+  socket.on('ability-activated', (data) => {
+    socket.broadcast.to(data.roomCode).emit('ability-activated', {
+      key: data.key,
+      isHost: data.isHost,
+      timestamp: data.timestamp
+    });
+  });
+
+  // Relayer la demande d'affichage de l'écran de sélection d'augments
+  socket.on('show-augment-selection', (data) => {
+    socket.broadcast.to(data.roomCode).emit('show-augment-selection', {
+      totalScore: data.totalScore
     });
   });
 

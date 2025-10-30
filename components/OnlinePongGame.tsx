@@ -13,6 +13,19 @@ import {
   type Star,
   type Particle,
 } from '@/lib/spaceEffects';
+import {
+  type Augment,
+  type Ability,
+  type ActiveAbility,
+  type PlayerAugments,
+  getRandomAugments,
+  getRandomAbilities,
+  calculateAugmentEffects,
+  isAbilityReady,
+  isAbilityEffectActive,
+} from '@/lib/augments';
+import AugmentSelection from './AugmentSelection';
+import AbilityHUD from './AbilityHUD';
 
 interface OnlinePongGameProps {
   roomCode: string;
@@ -42,6 +55,23 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
   const [connectionStatus, setConnectionStatus] = useState<string>('Initialisation...');
   const [actualRoomCode, setActualRoomCode] = useState<string>(roomCode);
   const socketManagerRef = useRef<SocketConnectionManager | null>(null);
+
+  // Augments system states
+  const [showAugmentSelection, setShowAugmentSelection] = useState(false);
+  const [showAbilitySelection, setShowAbilitySelection] = useState(false);
+  const [availableAugments, setAvailableAugments] = useState<Augment[]>([]);
+  const [availableAbilities, setAvailableAbilities] = useState<Ability[]>([]);
+  const [waitingForOpponentSelection, setWaitingForOpponentSelection] = useState(false);
+
+  // Player augments
+  const [player1Augments, setPlayer1Augments] = useState<PlayerAugments>({
+    passiveAugments: [],
+    abilities: {},
+  });
+  const [player2Augments, setPlayer2Augments] = useState<PlayerAugments>({
+    passiveAugments: [],
+    abilities: {},
+  });
 
   const gameStateRef = useRef<GameState>({
     ballX: 500,
@@ -106,6 +136,122 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
     state.ballSpeedY = 3 * (Math.random() > 0.5 ? 1 : -1);
   }, [CANVAS_WIDTH, CANVAS_HEIGHT]);
 
+  // Augment selection functions
+  const showAugmentSelectionScreen = useCallback(() => {
+    // Au premier point, proposer des sorts
+    const totalScore = gameStateRef.current.score1 + gameStateRef.current.score2;
+
+    if (totalScore === 1) {
+      // Premier point: sélection de sort
+      const abilities = getRandomAbilities(2); // 2 sorts au choix
+      setAvailableAbilities(abilities);
+      setShowAbilitySelection(true);
+    } else {
+      // Points suivants: sélection d'augment passif
+      const myAugments = isHost ? player1Augments : player2Augments;
+      const usedIds = myAugments.passiveAugments.map(a => a.id);
+      const augments = getRandomAugments(3, usedIds); // 3 augments au choix
+      setAvailableAugments(augments);
+      setShowAugmentSelection(true);
+    }
+  }, [isHost, player1Augments, player2Augments]);
+
+  const handleSelectAugment = useCallback((augment: Augment) => {
+    if (isHost) {
+      setPlayer1Augments(prev => ({
+        ...prev,
+        passiveAugments: [...prev.passiveAugments, augment],
+      }));
+    } else {
+      setPlayer2Augments(prev => ({
+        ...prev,
+        passiveAugments: [...prev.passiveAugments, augment],
+      }));
+    }
+
+    setShowAugmentSelection(false);
+    setWaitingForOpponentSelection(true);
+
+    // Envoyer la sélection à l'adversaire
+    if (socketManagerRef.current) {
+      socketManagerRef.current.sendMessage({
+        type: 'augment-selected',
+        payload: { augment, isHost },
+      });
+    }
+  }, [isHost]);
+
+  const handleSelectAbility = useCallback((ability: Ability) => {
+    const activeAbility: ActiveAbility = {
+      ability,
+      lastUsed: 0,
+      isActive: false,
+    };
+
+    if (isHost) {
+      setPlayer1Augments(prev => ({
+        ...prev,
+        abilities: { ...prev.abilities, [ability.key]: activeAbility },
+      }));
+    } else {
+      setPlayer2Augments(prev => ({
+        ...prev,
+        abilities: { ...prev.abilities, [ability.key]: activeAbility },
+      }));
+    }
+
+    setShowAbilitySelection(false);
+    setWaitingForOpponentSelection(true);
+
+    // Envoyer la sélection à l'adversaire
+    if (socketManagerRef.current) {
+      socketManagerRef.current.sendMessage({
+        type: 'ability-selected',
+        payload: { ability, isHost },
+      });
+    }
+  }, [isHost]);
+
+  const handleAbilityActivation = useCallback((key: 'q' | 'e' | 'r') => {
+    if (!gameStarted || !roundInProgress || gameOver) return;
+
+    const myAugments = isHost ? player1Augments : player2Augments;
+    const activeAbility = myAugments.abilities[key];
+
+    if (!activeAbility || !isAbilityReady(activeAbility, Date.now())) return;
+
+    // Activer le sort
+    const updatedAbility: ActiveAbility = {
+      ...activeAbility,
+      lastUsed: Date.now(),
+      isActive: true,
+      activatedAt: Date.now(),
+    };
+
+    if (isHost) {
+      setPlayer1Augments(prev => ({
+        ...prev,
+        abilities: { ...prev.abilities, [key]: updatedAbility },
+      }));
+    } else {
+      setPlayer2Augments(prev => ({
+        ...prev,
+        abilities: { ...prev.abilities, [key]: updatedAbility },
+      }));
+    }
+
+    // Envoyer l'activation à l'adversaire
+    if (socketManagerRef.current) {
+      socketManagerRef.current.sendMessage({
+        type: 'ability-activated',
+        payload: { key, isHost, timestamp: Date.now() },
+      });
+    }
+
+    // Son d'activation
+    playSound(400, 0.2);
+  }, [isHost, player1Augments, player2Augments, gameStarted, roundInProgress, gameOver, playSound]);
+
   // Initialize starfield
   useEffect(() => {
     if (canvasRef.current && starsRef.current.length === 0) {
@@ -141,15 +287,22 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
     ctx.stroke();
     ctx.setLineDash([]);
 
+    // Calculate augment effects for paddles
+    const player1Effects = calculateAugmentEffects(player1Augments.passiveAugments);
+    const player2Effects = calculateAugmentEffects(player2Augments.passiveAugments);
+
+    const paddle1Height = PADDLE_HEIGHT * player1Effects.paddleHeightMultiplier!;
+    const paddle2Height = PADDLE_HEIGHT * player2Effects.paddleHeightMultiplier!;
+
     // Draw paddles with themed colors (cyan vs magenta)
     ctx.shadowBlur = 15;
     ctx.shadowColor = SPACE_COLORS.CYAN;
     ctx.fillStyle = SPACE_COLORS.CYAN;
-    ctx.fillRect(10, state.paddle1Y, PADDLE_WIDTH, PADDLE_HEIGHT);
+    ctx.fillRect(10, state.paddle1Y, PADDLE_WIDTH, paddle1Height);
 
     ctx.shadowColor = SPACE_COLORS.MAGENTA;
     ctx.fillStyle = SPACE_COLORS.MAGENTA;
-    ctx.fillRect(CANVAS_WIDTH - 20, state.paddle2Y, PADDLE_WIDTH, PADDLE_HEIGHT);
+    ctx.fillRect(CANVAS_WIDTH - 20, state.paddle2Y, PADDLE_WIDTH, paddle2Height);
 
     // Draw ball
     ctx.shadowColor = SPACE_COLORS.STAR_WHITE;
@@ -185,17 +338,58 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
     } else {
       ctx.fillText('VOUS', CANVAS_WIDTH - 80, 30);
     }
-  }, [CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_SIZE, isHost]);
+  }, [CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_SIZE, isHost, player1Augments, player2Augments]);
 
   // Host-only: Game logic
   const update = useCallback(() => {
     if (!isHost || gameOver || !roundInProgress) return;
 
     const state = gameStateRef.current;
+    const currentTime = Date.now();
+
+    // Calculate augment effects
+    const player1Effects = calculateAugmentEffects(player1Augments.passiveAugments);
+    const player2Effects = calculateAugmentEffects(player2Augments.passiveAugments);
+
+    // Check for active ability effects
+    const player1TimeShield = player1Augments.abilities.q && isAbilityEffectActive(player1Augments.abilities.q, currentTime);
+    const player2TimeShield = player2Augments.abilities.q && isAbilityEffectActive(player2Augments.abilities.q, currentTime);
+    const player1Freeze = player1Augments.abilities.r &&
+      isAbilityEffectActive(player1Augments.abilities.r, currentTime) &&
+      player1Augments.abilities.r.ability.effect.type === 'freeze_ball';
+    const player2Freeze = player2Augments.abilities.r &&
+      isAbilityEffectActive(player2Augments.abilities.r, currentTime) &&
+      player2Augments.abilities.r.ability.effect.type === 'freeze_ball';
+
+    // Apply ball speed modifiers based on position and effects
+    let ballSpeedMultiplier = 1;
+
+    // If ball is frozen, don't move it
+    if (player1Freeze || player2Freeze) {
+      ballSpeedMultiplier = 0;
+    } else {
+      // Time shield slows ball in player's side
+      if (state.ballX < CANVAS_WIDTH / 2 && player1TimeShield) {
+        ballSpeedMultiplier *= 0.4;
+      } else if (state.ballX > CANVAS_WIDTH / 2 && player2TimeShield) {
+        ballSpeedMultiplier *= 0.4;
+      }
+
+      // Augment effects: ball speed in different sides
+      if (state.ballX < CANVAS_WIDTH / 2) {
+        // Ball in player 1's side
+        ballSpeedMultiplier *= player1Effects.ballSpeedInOwnSide!;
+        ballSpeedMultiplier *= player2Effects.ballSpeedInOpponentSide!;
+      } else {
+        // Ball in player 2's side
+        ballSpeedMultiplier *= player2Effects.ballSpeedInOwnSide!;
+        ballSpeedMultiplier *= player1Effects.ballSpeedInOpponentSide!;
+      }
+    }
 
     // Move ball
-    state.ballX += state.ballSpeedX;
-    state.ballY += state.ballSpeedY;
+    state.ballX += state.ballSpeedX * ballSpeedMultiplier;
+    state.ballY += state.ballSpeedY * ballSpeedMultiplier;
 
     // Ball collision with top/bottom
     if (state.ballY - BALL_SIZE < 0 || state.ballY + BALL_SIZE > CANVAS_HEIGHT) {
@@ -203,14 +397,19 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
       playSound(200, 0.1);
     }
 
+    // Calculate paddle heights with augment effects
+    const paddle1Height = PADDLE_HEIGHT * player1Effects.paddleHeightMultiplier!;
+    const paddle2Height = PADDLE_HEIGHT * player2Effects.paddleHeightMultiplier!;
+
     // Ball collision with paddle 1
     if (
       state.ballX - BALL_SIZE < 20 &&
       state.ballY > state.paddle1Y &&
-      state.ballY < state.paddle1Y + PADDLE_HEIGHT
+      state.ballY < state.paddle1Y + paddle1Height
     ) {
-      state.ballSpeedX = Math.abs(state.ballSpeedX) * 1.05;
-      const deltaY = state.ballY - (state.paddle1Y + PADDLE_HEIGHT / 2);
+      const speedIncrease = 1.05 * (player1Effects.ballSpeedOnHit || 1);
+      state.ballSpeedX = Math.abs(state.ballSpeedX) * speedIncrease;
+      const deltaY = state.ballY - (state.paddle1Y + paddle1Height / 2);
       state.ballSpeedY = deltaY * 0.2;
       playSound(300, 0.1);
     }
@@ -219,10 +418,11 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
     if (
       state.ballX + BALL_SIZE > CANVAS_WIDTH - 20 &&
       state.ballY > state.paddle2Y &&
-      state.ballY < state.paddle2Y + PADDLE_HEIGHT
+      state.ballY < state.paddle2Y + paddle2Height
     ) {
-      state.ballSpeedX = -Math.abs(state.ballSpeedX) * 1.05;
-      const deltaY = state.ballY - (state.paddle2Y + PADDLE_HEIGHT / 2);
+      const speedIncrease = 1.05 * (player2Effects.ballSpeedOnHit || 1);
+      state.ballSpeedX = -Math.abs(state.ballSpeedX) * speedIncrease;
+      const deltaY = state.ballY - (state.paddle2Y + paddle2Height / 2);
       state.ballSpeedY = deltaY * 0.2;
       playSound(300, 0.1);
     }
@@ -245,6 +445,18 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
         if (socketManagerRef.current) {
           socketManagerRef.current.sendGameOver('Joueur 2', state.score1, state.score2);
         }
+      } else {
+        // Show augment selection after scoring and notify opponent
+        setTimeout(() => {
+          showAugmentSelectionScreen();
+          // Notify opponent to also show selection screen
+          if (socketManagerRef.current) {
+            socketManagerRef.current.sendMessage({
+              type: 'show-augment-selection',
+              payload: { totalScore: state.score1 + state.score2 },
+            });
+          }
+        }, 500);
       }
     }
     if (state.ballX > CANVAS_WIDTH) {
@@ -264,6 +476,18 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
         if (socketManagerRef.current) {
           socketManagerRef.current.sendGameOver('Joueur 1', state.score1, state.score2);
         }
+      } else {
+        // Show augment selection after scoring and notify opponent
+        setTimeout(() => {
+          showAugmentSelectionScreen();
+          // Notify opponent to also show selection screen
+          if (socketManagerRef.current) {
+            socketManagerRef.current.sendMessage({
+              type: 'show-augment-selection',
+              payload: { totalScore: state.score1 + state.score2 },
+            });
+          }
+        }, 500);
       }
     }
 
@@ -271,7 +495,7 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
     if (socketManagerRef.current) {
       socketManagerRef.current.sendGameState(state);
     }
-  }, [isHost, gameOver, roundInProgress, resetBall, playSound, CANVAS_HEIGHT, CANVAS_WIDTH, PADDLE_HEIGHT, BALL_SIZE, WINNING_SCORE]);
+  }, [isHost, gameOver, roundInProgress, resetBall, playSound, CANVAS_HEIGHT, CANVAS_WIDTH, PADDLE_HEIGHT, BALL_SIZE, WINNING_SCORE, player1Augments, player2Augments, showAugmentSelectionScreen]);
 
   // Game loop
   const gameLoop = useCallback(() => {
@@ -285,23 +509,29 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
   // Handle paddle movement
   useEffect(() => {
     const interval = setInterval(() => {
+      // Calculate augment effects for paddle speed and height
+      const myAugments = isHost ? player1Augments : player2Augments;
+      const myEffects = calculateAugmentEffects(myAugments.passiveAugments);
+      const paddleSpeed = PADDLE_SPEED * myEffects.paddleSpeedMultiplier!;
+      const paddleHeight = PADDLE_HEIGHT * myEffects.paddleHeightMultiplier!;
+
       let newY = myPaddleY.current;
       let moved = false;
 
       if (keysPressed.current.has('w') && newY > 0) {
-        newY -= PADDLE_SPEED;
+        newY -= paddleSpeed;
         moved = true;
       }
-      if (keysPressed.current.has('s') && newY < CANVAS_HEIGHT - PADDLE_HEIGHT) {
-        newY += PADDLE_SPEED;
+      if (keysPressed.current.has('s') && newY < CANVAS_HEIGHT - paddleHeight) {
+        newY += paddleSpeed;
         moved = true;
       }
       if (keysPressed.current.has('arrowup') && newY > 0) {
-        newY -= PADDLE_SPEED;
+        newY -= paddleSpeed;
         moved = true;
       }
-      if (keysPressed.current.has('arrowdown') && newY < CANVAS_HEIGHT - PADDLE_HEIGHT) {
-        newY += PADDLE_SPEED;
+      if (keysPressed.current.has('arrowdown') && newY < CANVAS_HEIGHT - paddleHeight) {
+        newY += paddleSpeed;
         moved = true;
       }
 
@@ -323,12 +553,19 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
     }, 16); // ~60 FPS
 
     return () => clearInterval(interval);
-  }, [isHost, CANVAS_HEIGHT, PADDLE_HEIGHT, PADDLE_SPEED]);
+  }, [isHost, CANVAS_HEIGHT, PADDLE_HEIGHT, PADDLE_SPEED, player1Augments, player2Augments]);
 
   // Keyboard handlers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
+
+      // Gérer les touches de sort Q, E, R
+      if (key === 'q' || key === 'e' || key === 'r') {
+        e.preventDefault();
+        handleAbilityActivation(key as 'q' | 'e' | 'r');
+        return;
+      }
 
       // Gérer ESPACE pour démarrer/relancer
       if (key === ' ') {
@@ -344,8 +581,8 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
             socketManagerRef.current.startGame();
           }
         }
-        // Si un round est terminé (après un score)
-        else if (gameStarted && !roundInProgress && !gameOver && isHost) {
+        // Si un round est terminé (après un score) et que la sélection d'augments est terminée
+        else if (gameStarted && !roundInProgress && !gameOver && isHost && !showAugmentSelection && !showAbilitySelection && !waitingForOpponentSelection) {
           setRoundInProgress(true);
           resetBall();
           // Notifier l'adversaire
@@ -370,7 +607,7 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [bothPlayersReady, gameStarted, roundInProgress, gameOver, isHost, resetBall]);
+  }, [bothPlayersReady, gameStarted, roundInProgress, gameOver, isHost, resetBall, handleAbilityActivation, showAugmentSelection, showAbilitySelection, waitingForOpponentSelection]);
 
   // Socket.IO setup
   useEffect(() => {
@@ -434,6 +671,95 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
               setBothPlayersReady(false);
               setGameStarted(false);
               setRoundInProgress(false);
+              break;
+
+            case 'augment-selected':
+              // L'adversaire a sélectionné un augment
+              if (message.payload.isHost !== isHost) {
+                if (message.payload.isHost) {
+                  setPlayer1Augments(prev => ({
+                    ...prev,
+                    passiveAugments: [...prev.passiveAugments, message.payload.augment],
+                  }));
+                } else {
+                  setPlayer2Augments(prev => ({
+                    ...prev,
+                    passiveAugments: [...prev.passiveAugments, message.payload.augment],
+                  }));
+                }
+              }
+              break;
+
+            case 'ability-selected':
+              // L'adversaire a sélectionné un sort
+              if (message.payload.isHost !== isHost) {
+                const activeAbility: ActiveAbility = {
+                  ability: message.payload.ability,
+                  lastUsed: 0,
+                  isActive: false,
+                };
+                if (message.payload.isHost) {
+                  setPlayer1Augments(prev => ({
+                    ...prev,
+                    abilities: { ...prev.abilities, [message.payload.ability.key]: activeAbility },
+                  }));
+                } else {
+                  setPlayer2Augments(prev => ({
+                    ...prev,
+                    abilities: { ...prev.abilities, [message.payload.ability.key]: activeAbility },
+                  }));
+                }
+              }
+              break;
+
+            case 'both-players-selected':
+              // Les deux joueurs ont sélectionné, fermer les écrans
+              setShowAugmentSelection(false);
+              setShowAbilitySelection(false);
+              setWaitingForOpponentSelection(false);
+              break;
+
+            case 'ability-activated':
+              // L'adversaire a activé un sort
+              if (message.payload.isHost !== isHost) {
+                const key = message.payload.key as 'q' | 'e' | 'r';
+                const updatedAbility: ActiveAbility = {
+                  ability: message.payload.isHost ? player1Augments.abilities[key]?.ability! : player2Augments.abilities[key]?.ability!,
+                  lastUsed: message.payload.timestamp,
+                  isActive: true,
+                  activatedAt: message.payload.timestamp,
+                };
+                if (message.payload.isHost) {
+                  setPlayer1Augments(prev => ({
+                    ...prev,
+                    abilities: { ...prev.abilities, [key]: updatedAbility },
+                  }));
+                } else {
+                  setPlayer2Augments(prev => ({
+                    ...prev,
+                    abilities: { ...prev.abilities, [key]: updatedAbility },
+                  }));
+                }
+                playSound(400, 0.2);
+              }
+              break;
+
+            case 'show-augment-selection':
+              // L'hôte demande d'afficher l'écran de sélection d'augments
+              const totalScore = message.payload.totalScore;
+              if (totalScore === 1) {
+                // Premier point: sélection de sort
+                const abilities = getRandomAbilities(2);
+                setAvailableAbilities(abilities);
+                setShowAbilitySelection(true);
+              } else {
+                // Points suivants: sélection d'augment passif
+                const myAugments = isHost ? player1Augments : player2Augments;
+                const usedIds = myAugments.passiveAugments.map(a => a.id);
+                const augments = getRandomAugments(3, usedIds);
+                setAvailableAugments(augments);
+                setShowAugmentSelection(true);
+              }
               break;
           }
         });
@@ -644,6 +970,35 @@ export default function OnlinePongGame({ roomCode, isHost, onLeaveGame }: Online
             Retour au menu
           </button>
         </div>
+      )}
+
+      {/* Écran de sélection d'augments */}
+      {(showAugmentSelection || showAbilitySelection || waitingForOpponentSelection) && (
+        <AugmentSelection
+          augments={availableAugments}
+          abilities={availableAbilities}
+          onSelectAugment={handleSelectAugment}
+          onSelectAbility={handleSelectAbility}
+          playerNumber={isHost ? 1 : 2}
+          isYourTurn={!waitingForOpponentSelection}
+          showAbilitySelection={showAbilitySelection}
+        />
+      )}
+
+      {/* HUD des augments et sorts actifs */}
+      {gameStarted && !gameOver && (
+        <>
+          <AbilityHUD
+            augments={player1Augments.passiveAugments}
+            abilities={player1Augments.abilities}
+            isLeftSide={true}
+          />
+          <AbilityHUD
+            augments={player2Augments.passiveAugments}
+            abilities={player2Augments.abilities}
+            isLeftSide={false}
+          />
+        </>
       )}
 
       <canvas

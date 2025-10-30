@@ -1,7 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 
 export interface GameMessage {
-  type: 'paddle-move' | 'game-state' | 'player-joined' | 'start-game' | 'start-round' | 'game-over' | 'player-disconnected';
+  type: 'paddle-move' | 'game-state' | 'player-joined' | 'start-game' | 'start-round' | 'game-over' | 'player-disconnected' | 'augment-selected' | 'ability-selected' | 'ability-activated' | 'show-augment-selection' | 'both-players-selected';
   payload: any;
 }
 
@@ -107,6 +107,52 @@ export class SocketConnectionManager {
           }
         });
 
+        // Écouter les événements d'augments
+        this.socket.on('augment-selected', (data) => {
+          if (this.onMessageCallback) {
+            this.onMessageCallback({
+              type: 'augment-selected',
+              payload: data
+            });
+          }
+        });
+
+        this.socket.on('ability-selected', (data) => {
+          if (this.onMessageCallback) {
+            this.onMessageCallback({
+              type: 'ability-selected',
+              payload: data
+            });
+          }
+        });
+
+        this.socket.on('ability-activated', (data) => {
+          if (this.onMessageCallback) {
+            this.onMessageCallback({
+              type: 'ability-activated',
+              payload: data
+            });
+          }
+        });
+
+        this.socket.on('show-augment-selection', (data) => {
+          if (this.onMessageCallback) {
+            this.onMessageCallback({
+              type: 'show-augment-selection',
+              payload: data
+            });
+          }
+        });
+
+        this.socket.on('both-players-selected', () => {
+          if (this.onMessageCallback) {
+            this.onMessageCallback({
+              type: 'both-players-selected',
+              payload: {}
+            });
+          }
+        });
+
       } catch (err) {
         console.error('❌ Failed to initialize socket:', err);
         reject(err);
@@ -197,6 +243,16 @@ export class SocketConnectionManager {
         winner,
         score1,
         score2
+      });
+    }
+  }
+
+  // Envoyer un message générique (pour les augments)
+  sendMessage(message: GameMessage) {
+    if (this.socket && this.roomCode) {
+      this.socket.emit(message.type, {
+        roomCode: this.roomCode,
+        ...message.payload
       });
     }
   }
